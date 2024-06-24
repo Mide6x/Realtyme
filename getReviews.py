@@ -22,7 +22,6 @@ def run_query(query):
     cursor.close()
     return result
 
-# Function to insert data into the database
 def insert_data(title, reviews, review_date, place):
     cursor = conn.cursor()
     cursor.execute(
@@ -32,7 +31,6 @@ def insert_data(title, reviews, review_date, place):
     conn.commit()
     cursor.close()
 
-# Input form
 st.title("Customer Reviews Input Form")
 
 with st.form("input_form"):
@@ -46,7 +44,6 @@ with st.form("input_form"):
         insert_data(title, reviews, review_date, place)
         st.success("Review submitted successfully!")
 
-# Display existing reviews
 st.title("Existing Reviews")
 rows = run_query("SELECT * FROM customerreviews")
 
