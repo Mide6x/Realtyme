@@ -6,6 +6,8 @@ from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 from textblob import TextBlob
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from afinn import Afinn
+from transformers import pipeline
 import schedule
 import time
 import os
@@ -30,18 +32,38 @@ def get_vader_sentiment(review):
     vs = analyzer.polarity_scores(review)
     return vs['compound']
 
+afinn = Afinn()
+def get_afinn_sentiment(review):
+    return afinn.score(review)
 
-def categorize_sentiment(polarity):
-    if polarity > 0:
+bert_pipeline = pipeline("sentiment-analysis")
+def get_bert_sentiment(review):
+    result = bert_pipeline(review)[0]
+    if result['label'] == 'POSITIVE':
+        return result['score']
+    else:
+        return -result['score']
+
+def categorize_sentiment(score):
+    if score > 0:
         return 'Positive'
-    elif polarity < 0:
+    elif score < 0:
         return 'Negative'
     else:
         return 'Neutral'
 
-def ensemble_sentiment(textblob_score, vader_score):
-    avg_score = (textblob_score + vader_score) / 2
-    return categorize_sentiment(avg_score)
+def voting_ensemble(textblob_score, vader_score, afinn_score, bert_score):
+    sentiments = [
+        categorize_sentiment(textblob_score),
+        categorize_sentiment(vader_score),
+        categorize_sentiment(afinn_score),
+        categorize_sentiment(bert_score)
+    ]
+    sentiment_votes = {'Positive': 0, 'Negative': 0, 'Neutral': 0}
+    for sentiment in sentiments:
+        sentiment_votes[sentiment] += 1
+    
+    return max(sentiment_votes, key=sentiment_votes.get)
 
 def analyze_and_save():
     print("Fetching data from database...")
@@ -63,13 +85,18 @@ def analyze_and_save():
 
     df['cleaned_reviews'] = df.apply(preprocess_row, axis=1)
 
-    df['textblob_sentiment'] = df['cleaned_reviews'].apply(get_textblob_sentiment) #textblob
+    df['textblob_sentiment'] = df['cleaned_reviews'].apply(get_textblob_sentiment)
+    df['vader_sentiment'] = df['cleaned_reviews'].apply(get_vader_sentiment)
+    df['afinn_sentiment'] = df['cleaned_reviews'].apply(get_afinn_sentiment)
+    df['bert_sentiment'] = df['cleaned_reviews'].apply(get_bert_sentiment)
 
-    df['vader_sentiment'] = df['cleaned_reviews'].apply(get_vader_sentiment) #vader
+    df['ensemble_sentiment'] = df.apply(lambda x: voting_ensemble(
+        x['textblob_sentiment'], 
+        x['vader_sentiment'], 
+        x['afinn_sentiment'], 
+        x['bert_sentiment']
+    ), axis=1)
 
-    df['ensemble_sentiment'] = df.apply(lambda x: ensemble_sentiment(x['textblob_sentiment'], x['vader_sentiment']), axis=1)
-
-    
     temp_filename = "temp_reviews_sentiment.xlsx"
     df.to_excel(temp_filename, index=False)
     os.replace(temp_filename, "reviews_sentiment.xlsx")
